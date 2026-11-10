@@ -18,6 +18,7 @@ export interface DraftInput {
 export function buildDraftMessage(
 	from: string,
 	input: DraftInput,
+	senderName?: string,
 ): {
 	messageId: string;
 	source: Uint8Array;
@@ -26,7 +27,7 @@ export function buildDraftMessage(
 	const cc = list(input.cc);
 	const bcc = list(input.bcc);
 	const headers = [
-		`From: ${from}`,
+		`From: ${senderName ? `${encodePhrase(senderName)} <${from}>` : from}`,
 		`To: ${addressHeader(input.to)}`,
 		...(cc.length ? [`Cc: ${addressHeader(cc)}`] : []),
 		...(bcc.length ? [`Bcc: ${addressHeader(bcc)}`] : []),
@@ -153,7 +154,7 @@ function encodePhrase(value: string): string {
 	const sanitized = sanitizeHeader(value).trim();
 	return /^[\x20-\x7e]*$/.test(sanitized)
 		? `"${sanitized.replace(/(["\\])/g, "\\$1")}"`
-		: encodeHeader(sanitized);
+		: encodeMimeWords(sanitized, true);
 }
 
 function encodeHeader(value: string): string {
@@ -169,14 +170,14 @@ function sanitizeMessageId(value: string): string {
 	return sanitizeHeader(value).trim();
 }
 
-function encodeMimeWords(value: string): string {
+function encodeMimeWords(value: string, phrase = false): string {
 	const prefix = "=?UTF-8?Q?";
 	const suffix = "?=";
 	const maxLength = 75 - prefix.length - suffix.length;
 	const words: string[] = [];
 	let current = "";
 	for (const character of value) {
-		const token = encodedWordToken(character);
+		const token = encodedWordToken(character, phrase);
 		if (current && current.length + token.length > maxLength) {
 			words.push(`${prefix}${current}${suffix}`);
 			current = "";
@@ -187,12 +188,13 @@ function encodeMimeWords(value: string): string {
 	return words.join("\r\n ");
 }
 
-function encodedWordToken(value: string): string {
+function encodedWordToken(value: string, phrase: boolean): string {
 	return [...new TextEncoder().encode(value)]
 		.map((byte) => {
 			if (byte === 0x20) return "_";
-			if (byte >= 0x21 && byte <= 0x7e && byte !== 0x3d && byte !== 0x3f && byte !== 0x5f)
-				return String.fromCharCode(byte);
+			const character = String.fromCharCode(byte);
+			const literal = phrase ? /^[A-Za-z0-9!*+/-]$/ : /^[\x21-\x7e]$/;
+			if (literal.test(character) && !"=?_".includes(character)) return character;
 			return hexByte(byte);
 		})
 		.join("");

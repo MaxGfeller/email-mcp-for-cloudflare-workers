@@ -410,7 +410,7 @@ export class MailService {
 			if (input.subject === undefined) throw new Error("Provide subject for a new draft");
 			draftInput = { ...input, to: input.to, subject: input.subject };
 		}
-		const draft = buildDraftMessage(from, draftInput);
+		const draft = buildDraftMessage(from, draftInput, account.senderName);
 		const location = await this.withImap(input.accountId, (session) =>
 			session.createDraft(draft.source, draft.messageId),
 		);
@@ -483,18 +483,22 @@ export class MailService {
 					"Draft must have exactly one From address; set from explicitly to repair it",
 				);
 			const from = configuredSender(account, input.from ?? existingFrom?.[0].address);
-			const draft = buildDraftMessage(from, {
-				to: input.to ?? addressList(parsed.to),
-				cc: input.cc ?? optionalAddresses(parsed.cc),
-				bcc: input.bcc ?? optionalAddresses(parsed.bcc),
-				replyTo: input.replyTo ?? addressList(parsed.replyTo)[0],
-				subject: input.subject ?? parsed.subject ?? "",
-				text: input.text ?? parsed.text,
-				html: input.html ?? (typeof parsed.html === "string" ? parsed.html : undefined),
-				attachments: input.attachments ?? draftAttachments(parsed),
-				inReplyTo: parsed.inReplyTo,
-				references: normalizeReferences(parsed.references),
-			});
+			const draft = buildDraftMessage(
+				from,
+				{
+					to: input.to ?? addressList(parsed.to),
+					cc: input.cc ?? optionalAddresses(parsed.cc),
+					bcc: input.bcc ?? optionalAddresses(parsed.bcc),
+					replyTo: input.replyTo ?? addressList(parsed.replyTo)[0],
+					subject: input.subject ?? parsed.subject ?? "",
+					text: input.text ?? parsed.text,
+					html: input.html ?? (typeof parsed.html === "string" ? parsed.html : undefined),
+					attachments: input.attachments ?? draftAttachments(parsed),
+					inReplyTo: parsed.inReplyTo,
+					references: normalizeReferences(parsed.references),
+				},
+				account.senderName,
+			);
 			const location = await session.replaceDraft(
 				input.folder,
 				input.uid,

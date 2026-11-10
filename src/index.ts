@@ -7,7 +7,7 @@ import { accessRejection, isMcpRequest } from "./access";
 import app from "./app";
 import { AccountStore } from "./mail/account-store";
 import { MailService } from "./mail/mail-service";
-import { senderSettings } from "./mail/sender";
+import { senderNameSchema, senderSettings } from "./mail/sender";
 import type { MailEnv } from "./mail/types";
 import { observeTool } from "./observability";
 
@@ -47,6 +47,11 @@ const replyToSchema = z
 	.describe("Optional Reply-To email address to include on the draft for recipient replies.");
 
 const senderInputs = {
+	senderName: senderNameSchema
+		.optional()
+		.describe(
+			"Name recipients see next to the From address. Applies to new and edited drafts from this account. Omit to preserve it on update or use an empty string to clear it.",
+		),
 	aliases: z
 		.array(z.string().email())
 		.optional()
@@ -63,6 +68,10 @@ const senderInputs = {
 };
 
 const senderOutput = {
+	senderName: z
+		.string()
+		.optional()
+		.describe("Configured display name in the outgoing From header."),
 	aliases: z
 		.array(z.string())
 		.describe("Configured additional sending addresses; excludes the login email."),
@@ -264,6 +273,7 @@ export class MyMCP extends McpAgent<MailEnv> {
 						email: input.email,
 						aliases: input.aliases,
 						defaultFrom: input.defaultFrom,
+						senderName: input.senderName,
 						imap: {
 							host: input.imapHost,
 							port: input.imapPort,
@@ -327,11 +337,21 @@ export class MyMCP extends McpAgent<MailEnv> {
 				observeTool("email_list_accounts", async () => {
 					const accounts = await store.list();
 					const result = accounts.map(
-						({ id, name, email, aliases, defaultFrom, imap, smtp, auth }) => ({
+						({
 							id,
 							name,
 							email,
-							...senderSettings({ email, aliases, defaultFrom }),
+							aliases,
+							defaultFrom,
+							senderName,
+							imap,
+							smtp,
+							auth,
+						}) => ({
+							id,
+							name,
+							email,
+							...senderSettings({ email, aliases, defaultFrom, senderName }),
 							imap,
 							smtp,
 							capabilities: {
@@ -350,7 +370,7 @@ export class MyMCP extends McpAgent<MailEnv> {
 			"email_update_account_sender",
 			{
 				description:
-					"Change, update, or reset an account's email address aliases and default From address using accountId from email_list_accounts. Returns accountId, login email, aliases, and effective defaultFrom. Side effect: updates only this MCP server's local encrypted sender configuration; does not change login credentials, create provider aliases, change provider settings, modify existing drafts, or send mail. Addresses must already be authorized at the provider. Use before draft creation to change the default; use email_update_message_draft with from to change an existing draft's sender.",
+					"Change, update, or reset an account's sender name, email address aliases, or default From address using accountId from email_list_accounts. Returns accountId, login email, senderName if configured, aliases, and effective defaultFrom. Side effect: updates only this MCP server's local encrypted sender configuration; does not change login credentials, create provider aliases, change provider settings, modify existing drafts, or send mail. Addresses must already be authorized at the provider. Use before draft creation to change the default; use email_update_message_draft with from to change an existing draft's sender.",
 				inputSchema: { ...accountSelector, ...senderInputs },
 				outputSchema: { accountId: z.string(), email: z.string(), ...senderOutput },
 				annotations: titled(
@@ -358,14 +378,21 @@ export class MyMCP extends McpAgent<MailEnv> {
 					annotations(false, false, true, false),
 				),
 			},
-			async ({ accountId, aliases, defaultFrom }) =>
+			async ({ accountId, aliases, defaultFrom, senderName }) =>
 				observeTool("email_update_account_sender", async () => {
-					if (aliases === undefined && defaultFrom === undefined)
-						throw new Error("Provide aliases or defaultFrom to update sender settings");
+					if (
+						aliases === undefined &&
+						defaultFrom === undefined &&
+						senderName === undefined
+					)
+						throw new Error(
+							"Provide aliases, defaultFrom, or senderName to update sender settings",
+						);
 					return text(
 						await store.updateSender(accountId, {
 							...(aliases !== undefined ? { aliases } : {}),
 							...(defaultFrom !== undefined ? { defaultFrom } : {}),
+							...(senderName !== undefined ? { senderName } : {}),
 						}),
 					);
 				}),

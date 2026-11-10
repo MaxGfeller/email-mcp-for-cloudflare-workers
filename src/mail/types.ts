@@ -25,6 +25,7 @@ export interface MailAccount {
 	aliases?: string[];
 	/** Defaults to email for accounts saved before sender settings were available. */
 	defaultFrom?: string;
+	senderName?: string;
 	imap: ServerConfig;
 	smtp?: ServerConfig;
 	auth: AccountAuth;

@@ -69,4 +69,4 @@ const replyTo = draftSource({
 	text: "Reply here",
 	replyTo: "Jörg, Support <reply@example.com>",
 });
-assert.match(replyTo, /^Reply-To: =\?UTF-8\?Q\?J=C3=B6rg,_Support\?= <reply@example\.com>$/m);
+assert.match(replyTo, /^Reply-To: =\?UTF-8\?Q\?J=C3=B6rg=2C_Support\?= <reply@example\.com>$/m);

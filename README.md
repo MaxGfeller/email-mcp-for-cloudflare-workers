@@ -361,7 +361,13 @@ For MCP clients, call `email_list_accounts` to get the account ID, login `email`
 }
 ```
 
-The same `aliases` and `defaultFrom` fields are available on `email_add_account`. Updating aliases
+Use **Sender name** in the web account editor or set `senderName` with
+`email_update_account_sender` to show a name next to the address in the `From` header.
+It applies to all addresses on the account when creating or editing a draft.
+A saved draft uses the header it already contains when sent. Clear the field or pass
+`senderName: ""` to use the address alone on future drafts.
+
+The same `aliases`, `defaultFrom`, and `senderName` fields are available on `email_add_account`. Updating aliases
 replaces the entire list; omitted settings are preserved. Set `defaultFrom` to the login email to
 reset it. To remove all aliases, supply `aliases: []` and reset the default in the same call if it
 currently uses an alias. Addresses are matched without regard to case and duplicates are removed.

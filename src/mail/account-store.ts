@@ -47,7 +47,7 @@ export class AccountStore {
 
 	async updateSender(
 		id: string | undefined,
-		input: { aliases?: string[]; defaultFrom?: string },
+		input: Pick<MailAccount, "aliases" | "defaultFrom" | "senderName">,
 	) {
 		const account = await this.get(id);
 		const settings = senderSettings({ ...account, ...input });

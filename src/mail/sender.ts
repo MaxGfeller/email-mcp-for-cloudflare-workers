@@ -3,7 +3,13 @@ import type { MailAccount } from "./types.ts";
 
 type SenderAccount = Pick<MailAccount, "email" | "aliases" | "defaultFrom">;
 
-export function senderSettings(account: SenderAccount) {
+export const senderNameSchema = z
+	.string()
+	.max(100)
+	.refine((value) => !/[\p{Cc}\p{Zl}\p{Zp}]/u.test(value), "Sender name must be a single line")
+	.trim();
+
+export function senderSettings(account: SenderAccount & Pick<MailAccount, "senderName">) {
 	const email = z.email().parse(account.email.trim());
 	const seen = new Set([email.toLowerCase()]);
 	const aliases = (account.aliases ?? [])
@@ -15,7 +21,11 @@ export function senderSettings(account: SenderAccount) {
 			return true;
 		});
 	const defaultFrom = configuredSender({ email, aliases }, account.defaultFrom ?? email);
-	return { aliases, defaultFrom };
+	return {
+		aliases,
+		defaultFrom,
+		senderName: senderNameSchema.optional().parse(account.senderName) || undefined,
+	};
 }
 
 export function configuredSender(account: SenderAccount, from?: string): string {

@@ -141,7 +141,7 @@ app.post("/accounts/pending/edit-test", async (c) => {
 	try {
 		const form = await c.req.formData();
 		pending = await pendingAccountChange(c.env, form);
-		pending.account = accountInput(form, pending.account.auth);
+		pending.account = accountInput(form, pending.account);
 	} catch (error) {
 		return pendingAccountError(c, error);
 	}
@@ -196,7 +196,7 @@ app.post("/accounts/:id/update", async (c) => {
 	try {
 		const form = await c.req.formData();
 		const existing = await store.get(c.req.param("id"));
-		account = { id: existing.id, ...accountInput(form, existing.auth) };
+		account = { id: existing.id, ...accountInput(form, existing) };
 		if (
 			account.email === existing.email &&
 			JSON.stringify(account.imap) === JSON.stringify(existing.imap) &&
@@ -583,6 +583,7 @@ function managementPage(
 								${account.smtp ? `<div><dt>SMTP security</dt><dd>${account.smtp.secure ? "Implicit TLS" : "STARTTLS"}</dd></div>` : ""}
 								<div><dt>Can send</dt><dd>${account.smtp ? "Yes" : "No"}</dd></div>
 								<div><dt>Authentication</dt><dd>${account.auth.type === "oauth2" ? "OAuth 2.0" : "Password"}</dd></div>
+								${account.senderName ? `<div><dt>Sender name</dt><dd>${escapeHtml(account.senderName)}</dd></div>` : ""}
 								<div><dt>Default From</dt><dd>${escapeHtml(account.defaultFrom ?? account.email)}</dd></div>
 								<div><dt>Aliases</dt><dd>${escapeHtml(account.aliases?.join(", ") || "None configured")}</dd></div>
 							</dl>
@@ -779,10 +780,11 @@ function accountEditor(
 			<div class="fields">
 				<label class="full">Login email address<input name="email" type="email" value="${escapeHtml(formAccount?.email ?? "")}" required maxlength="320" autocomplete="username"></label>
 			</div>
-			<fieldset><legend>Sender addresses</legend><div class="fields">
+			<fieldset><legend>Sender settings</legend><div class="fields">
+				<label class="full">Sender name<input name="senderName" value="${escapeHtml(formAccount?.senderName ?? "")}" placeholder="Optional name shown to recipients" maxlength="100" autocomplete="off"></label>
 				<label class="full">Email aliases<input name="aliases" value="${escapeHtml(formAccount?.aliases?.join(", ") ?? "")}" placeholder="alias@icloud.com, alias@outlook.com" autocomplete="off"></label>
 				<label class="full">Default From address<input name="defaultFrom" type="email" value="${escapeHtml(formAccount?.defaultFrom ?? "")}" placeholder="Defaults to login email address" maxlength="320" autocomplete="off"></label>
-			</div><p class="help">Enter aliases for this mailbox separated by commas. The default From must be the login email or one of these aliases. Only add addresses your provider already allows this account to send from. These settings apply to new drafts and replies; existing drafts keep their saved sender.</p></fieldset>
+			</div><p class="help">Enter aliases for this mailbox separated by commas. The default From must be the login email or one of these aliases. Only add addresses your provider already allows this account to send from. The sender name appears on new and edited drafts. Leave it blank to use just the address.</p></fieldset>
 			<fieldset><legend>Incoming mail (IMAP)</legend><div class="fields server-fields">
 				<label>Host<input name="imapHost" id="imap-host" value="${escapeHtml(formAccount?.imap.host ?? "")}" required></label>
 				<label>Port<input name="imapPort" id="imap-port" type="number" min="1" max="65535" value="${formAccount?.imap.port ?? ""}" placeholder="993" required></label>
@@ -997,8 +999,11 @@ function isTrustedFormSubmission(request: Request): boolean {
 	}
 }
 
-function accountInput(form: FormData, existingAuth?: AccountAuth): Omit<MailAccount, "id"> {
-	let auth = existingAuth;
+function accountInput(
+	form: FormData,
+	existing?: Pick<MailAccount, "auth" | "senderName">,
+): Omit<MailAccount, "id"> {
+	let auth = existing?.auth;
 	if (!auth) {
 		const authType = value(form, "authType");
 		auth =
@@ -1015,6 +1020,7 @@ function accountInput(form: FormData, existingAuth?: AccountAuth): Omit<MailAcco
 					: fail("Select a supported authentication type");
 	}
 	const email = validEmail(required(form, "email"));
+	const senderName = form.get("senderName");
 	const settings = senderSettings({
 		email,
 		aliases: value(form, "aliases")
@@ -1022,6 +1028,7 @@ function accountInput(form: FormData, existingAuth?: AccountAuth): Omit<MailAcco
 			.map((alias) => alias.trim())
 			.filter(Boolean),
 		defaultFrom: optional(form, "defaultFrom"),
+		senderName: typeof senderName === "string" ? senderName : existing?.senderName,
 	});
 	return {
 		name: validName(required(form, "name")),

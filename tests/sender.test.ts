@@ -126,6 +126,7 @@ test("legacy accounts retain their login sender; aliases normalize and deduplica
 	assert.deepEqual(senderSettings({ email: "login@icloud.com" }), {
 		aliases: [],
 		defaultFrom: "login@icloud.com",
+		senderName: undefined,
 	});
 	assert.deepEqual(
 		senderSettings({
@@ -135,6 +136,7 @@ test("legacy accounts retain their login sender; aliases normalize and deduplica
 		{
 			aliases: ["personal@icloud.com"],
 			defaultFrom: "personal@icloud.com",
+			senderName: undefined,
 		},
 	);
 	assert.equal(configuredSender(account(), "WORK@icloud.com"), "work@icloud.com");
@@ -146,6 +148,10 @@ test("legacy accounts retain their login sender; aliases normalize and deduplica
 		assert.throws(() => configuredSender(account(), from));
 	}
 	assert.throws(() => senderSettings({ ...account(), aliases: ["invalid"] }));
+	assert.throws(
+		() => senderSettings({ ...account(), senderName: "Name\r\nBcc: other@example.com" }),
+		/Sender name must be a single line/,
+	);
 });
 
 test("encrypted sender updates preserve credentials and reject removing the current default", async () => {
@@ -165,7 +171,7 @@ test("encrypted sender updates preserve credentials and reject removing the curr
 });
 
 test("new drafts use the configured default and accept per-message aliases", async (t) => {
-	const { mail } = await fixture();
+	const { mail } = await fixture(account({ senderName: 'Mäx "Max", Gfeller' }));
 	const saved = mockImap(t);
 	const result = await mail.createDraft({
 		to: "other@example.com",
@@ -173,7 +179,9 @@ test("new drafts use the configured default and accept per-message aliases", asy
 		text: "Body",
 	});
 	assert.equal(result.from, "personal@icloud.com");
-	assert.equal((await simpleParser(Buffer.from(saved[0]))).from?.value[0].address, result.from);
+	const [sender] = (await simpleParser(Buffer.from(saved[0]))).from!.value;
+	assert.equal(sender.address, result.from);
+	assert.equal(sender.name, 'Mäx "Max", Gfeller');
 	await mail.createDraft({
 		from: "work@icloud.com",
 		to: "other@example.com",
@@ -228,13 +236,15 @@ test("forwards accept an alias and draft edits preserve or explicitly change the
 		(await simpleParser(Buffer.from(saved[0]))).from?.value[0].address,
 		"work@icloud.com",
 	);
-	await store.updateSender(undefined, { defaultFrom: "login@icloud.com" });
+	await store.updateSender(undefined, {
+		defaultFrom: "login@icloud.com",
+		senderName: "New Name",
+	});
 	const edited = await mail.editDraft({ folder: "Drafts", uid: 1, text: "Edited" });
 	assert.equal(edited.from, "personal@icloud.com");
-	assert.equal(
-		(await simpleParser(Buffer.from(saved[1]))).from?.value[0].address,
-		"personal@icloud.com",
-	);
+	const [editedSender] = (await simpleParser(Buffer.from(saved[1]))).from!.value;
+	assert.equal(editedSender.address, "personal@icloud.com");
+	assert.equal(editedSender.name, "New Name");
 	const changed = await mail.editDraft({ folder: "Drafts", uid: 1, from: "work@icloud.com" });
 	assert.equal(changed.from, "work@icloud.com");
 	assert.equal(
@@ -263,17 +273,21 @@ for (const auth of [account().auth, { type: "oauth2" as const, accessToken: "sto
 		t.mock.method(session, "write", async (value: string) => {
 			outgoing.push(value);
 		});
-		const draft = buildDraftMessage("work@icloud.com", {
-			to: "other@example.com",
-			bcc: "hidden@example.com",
-			subject: "Test",
-			text: "Body",
-		});
+		const draft = buildDraftMessage(
+			"work@icloud.com",
+			{
+				to: "other@example.com",
+				bcc: "hidden@example.com",
+				subject: "Test",
+				text: "Body",
+			},
+			"Max Gfeller",
+		);
 		const result = await session.sendRaw(draft.source);
 		assert.equal(result.from, "work@icloud.com");
 		assert.ok(commands.includes("MAIL FROM:<work@icloud.com>"));
 		assert.ok(commands.includes("RCPT TO:<hidden@example.com>"));
-		assert.match(outgoing[0], /^From: work@icloud.com\r\n/);
+		assert.match(outgoing[0], /^From: "Max Gfeller" <work@icloud.com>\r\n/);
 		assert.doesNotMatch(outgoing[0], /^Bcc:/m);
 		if (auth.type === "password") {
 			assert.ok(commands.includes(btoa("login@icloud.com")));
@@ -317,6 +331,7 @@ test("web sender changes save without connecting and keep the OAuth identity", a
 		email: "login@icloud.com",
 		aliases: "personal@icloud.com, work@icloud.com",
 		defaultFrom: "work@icloud.com",
+		senderName: "Max Gfeller",
 		imapHost: "imap.mail.me.com",
 		imapPort: "993",
 		imapSecure: "on",
@@ -345,6 +360,8 @@ test("web sender changes save without connecting and keep the OAuth identity", a
 	});
 	const page = await app.request("https://mail.example.com/?edit=account-1", {}, env as any);
 	const html = await page.text();
+	assert.equal((await store.get()).senderName, "Max Gfeller");
+	assert.match(html, /name="senderName"[^>]*value="Max Gfeller"/);
 	assert.match(html, /name="defaultFrom"[^>]*value="work@icloud.com"/);
 	assert.match(html, /name="aliases"[^>]*value="personal@icloud.com, work@icloud.com"/);
 	assert.doesNotMatch(html, /private-token|private-refresh/);
@@ -392,13 +409,18 @@ test("MCP exposes sender settings and validates structured account and draft out
 	assert.doesNotMatch(JSON.stringify(listed), /stored-secret/);
 	const updated = await client.callTool({
 		name: "email_update_account_sender",
-		arguments: { accountId: "account-1", defaultFrom: "work@icloud.com" },
+		arguments: {
+			accountId: "account-1",
+			defaultFrom: "work@icloud.com",
+			senderName: "Max Gfeller",
+		},
 	});
 	assert.deepEqual(updated.structuredContent, {
 		accountId: "account-1",
 		email: "login@icloud.com",
 		aliases: account().aliases,
 		defaultFrom: "work@icloud.com",
+		senderName: "Max Gfeller",
 	});
 	assert.deepEqual((await store.get()).auth, account().auth);
 	const invalid = await client.callTool({
@@ -414,8 +436,14 @@ test("MCP exposes sender settings and validates structured account and draft out
 	});
 	assert.equal(draft.isError, undefined);
 	assert.equal(draft.structuredContent?.from, "work@icloud.com");
-	assert.equal(
-		(await simpleParser(Buffer.from(saved[0]))).from?.value[0].address,
-		"work@icloud.com",
-	);
+	const [sender] = (await simpleParser(Buffer.from(saved[0]))).from!.value;
+	assert.equal(sender.address, "work@icloud.com");
+	assert.equal(sender.name, "Max Gfeller");
+	const cleared = await client.callTool({
+		name: "email_update_account_sender",
+		arguments: { senderName: "" },
+	});
+	assert.equal(cleared.isError, undefined);
+	assert.equal((await store.get()).senderName, undefined);
+	assert.equal((await store.get()).defaultFrom, "work@icloud.com");
 });
