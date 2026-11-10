@@ -67,3 +67,26 @@ test("invalid Access assertions are rejected and valid assertions continue", asy
 	);
 	assert.equal(accepted, undefined);
 });
+
+test("token authentication keeps the MCP and browser credentials separate and fails closed", async () => {
+	const token = "mcp-test-token";
+	const password = "browser-test-password";
+	const verify = async () => assert.fail("token mode must not consult Cloudflare Access");
+	const check = (path: string, authorization: string, config: AccessEnv) =>
+		accessRejection(
+			new Request(`https://worker.example${path}`, {
+				headers: { Authorization: authorization },
+			}),
+			config,
+			verify,
+		);
+	const config = env({ MCP_BEARER_TOKEN: token, WEB_ADMIN_PASSWORD: password });
+	const browser = `Basic ${btoa(`admin:${password}`)}`;
+
+	assert.equal(await check("/mcp", `Bearer ${token}`, config), undefined);
+	assert.equal(await check("/accounts", browser, config), undefined);
+	assert.equal((await check("/mcp", browser, config))?.status, 401);
+	assert.equal((await check("/accounts", `Bearer ${token}`, config))?.status, 401);
+	assert.equal((await check("/mcp", "Bearer invalid", config))?.status, 401);
+	assert.equal((await check("/", browser, env({ MCP_BEARER_TOKEN: token })))?.status, 401);
+});

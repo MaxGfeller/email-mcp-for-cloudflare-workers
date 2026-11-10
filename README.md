@@ -105,6 +105,20 @@ local/deployed events with `npx wrangler tail`.
 In VS Code, open **Run and Debug**, select **Email MCP: Local server**, and click Run (or
 press F5). Wrangler loads the same `.dev.vars` file automatically in the integrated terminal.
 
+## Token authentication
+
+For a private deployment whose MCP client supports custom authorization headers, set
+`MCP_BEARER_TOKEN` and `WEB_ADMIN_PASSWORD` as distinct Worker secrets. Generate each
+with `openssl rand -hex 32`. Connect to `/mcp` with
+`Authorization: Bearer <MCP_BEARER_TOKEN>`. Open the Worker root in a browser and
+sign in with username `admin` and the web admin password to configure mailboxes.
+
+When either secret is defined, the Worker uses this mode instead of validating
+Cloudflare Access assertions. A route with no corresponding secret rejects requests.
+Deploy directly to an HTTPS Worker URL without an Access application intercepting
+it, and leave the example Access variables in place. Clients that require OAuth
+can use the Cloudflare Access setup below instead.
+
 ## Cloudflare Access
 
 Production authentication is handled by a Cloudflare Access self-hosted application with

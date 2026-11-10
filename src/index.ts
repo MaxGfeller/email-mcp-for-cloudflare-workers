@@ -3,7 +3,7 @@ import type { ToolAnnotations } from "@modelcontextprotocol/sdk/types.js";
 import { McpAgent } from "agents/mcp";
 import { createRemoteJWKSet, jwtVerify } from "jose";
 import { z } from "zod";
-import { accessRejection } from "./access";
+import { accessRejection, isMcpRequest } from "./access";
 import app from "./app";
 import { AccountStore } from "./mail/account-store";
 import { MailService } from "./mail/mail-service";
@@ -1448,8 +1448,7 @@ export default {
 		);
 		if (rejection) return rejection;
 
-		const pathname = new URL(request.url).pathname;
-		return pathname === "/mcp" || pathname.startsWith("/mcp/")
+		return isMcpRequest(request)
 			? mcpHandler.fetch(request, env, ctx)
 			: app.fetch(request, env, ctx);
 	},
